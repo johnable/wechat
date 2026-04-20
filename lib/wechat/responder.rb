@@ -100,7 +100,15 @@ module Wechat
       end
 
       def responder_for(message)
-        message_type = message[:MsgType].to_sym
+        Rails.logger.info "message: #{message.inspect}"
+        raw_message_type = message[:MsgType]
+        if raw_message_type.nil?
+          Rails.logger&.error("[Wechat::Responder] Missing MsgType in message payload: #{message.inspect}") if defined?(Rails)
+          ActiveSupport::Notifications.instrument 'wechat.responder.missing_msg_type', message: message
+          raise ArgumentError, 'MsgType is missing in message payload'
+        end
+
+        message_type = raw_message_type.to_sym
         responders = user_defined_responders(message_type)
 
         case message_type

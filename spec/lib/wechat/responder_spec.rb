@@ -14,7 +14,7 @@ RSpec.describe WechatController, type: :controller do
   let(:signature_params) do
     timestamp = '1234567'
     nonce = 'nonce'
-    signature = Digest::SHA1.hexdigest([ENV['WECHAT_TOKEN'], timestamp, nonce].sort.join)
+    signature = Digest::SHA1.hexdigest([ENV.fetch('WECHAT_TOKEN', nil), timestamp, nonce].sort.join)
     { timestamp: timestamp, nonce: nonce, signature: signature }
   end
 
@@ -72,14 +72,14 @@ RSpec.describe WechatController, type: :controller do
 
   describe 'responders' do
     specify 'responders only accept :text, :image, :voice, :video, :shortvideo, :location, :link, :event, :fallback message type' do
-      [:text, :image, :voice, :video, :location, :link, :event, :fallback, :unknown].each do |message_type|
+      %i[text image voice video location link event fallback unknown].each do |message_type|
         controller.class.on message_type, respond: 'response'
       end
     end
 
     specify 'responder take :with argument only for :text and :event message_type' do
-      expect(controller.class.on :text, with: 'command', respond: 'response').to eq(with: 'command', respond: 'response')
-      expect(controller.class.on :event, with: 'subscribe').to eq(with: 'subscribe')
+      expect(controller.class.on(:text, with: 'command', respond: 'response')).to eq(with: 'command', respond: 'response')
+      expect(controller.class.on(:event, with: 'subscribe')).to eq(with: 'subscribe')
       expect { controller.class.on :image, with: 'with' }.to raise_error
     end
   end
@@ -129,6 +129,14 @@ RSpec.describe WechatController, type: :controller do
       expect do |b|
         controller.class.responder_for(MsgType: 'event', Event: 'click', EventKey: 'EVENTKEY', &b)
       end.to yield_with_args({ respond: 'EVENTKEY clicked', with: 'EVENTKEY' }, 'EVENTKEY')
+    end
+
+    specify 'raise explicit error and emit notification when MsgType is missing' do
+      expect(ActiveSupport::Notifications).to receive(:instrument).with('wechat.responder.missing_msg_type', hash_including(message: hash_including(Content: 'no type')))
+
+      expect do
+        controller.class.responder_for(Content: 'no type') {}
+      end.to raise_error(ArgumentError, 'MsgType is missing in message payload')
     end
   end
 
@@ -256,9 +264,7 @@ RSpec.describe WechatController, type: :controller do
       end
 
       on :event, with: 'scan' do |request|
-        if request[:EventKey].present?
-          request.reply.text "event scan got EventKey #{request[:EventKey]} Ticket #{request[:Ticket]}"
-        end
+        request.reply.text "event scan got EventKey #{request[:EventKey]} Ticket #{request[:Ticket]}" if request[:EventKey].present?
       end
 
       on :location do |message|
@@ -435,7 +441,7 @@ RSpec.describe WechatController, type: :controller do
 
     before(:each) do
       routes.draw { get 'oauth2_page', to: 'wechat#oauth2_page' }
-      allow(controller.wechat.jsapi_ticket).to receive(:oauth2_state) {'oauth2_state'}
+      allow(controller.wechat.jsapi_ticket).to receive(:oauth2_state) { 'oauth2_state' }
     end
 
     it 'will redirect_to tencent page at first visit' do
@@ -481,7 +487,7 @@ RSpec.describe WechatController, type: :controller do
 
     before(:each) do
       routes.draw { get 'oauth2_page', to: 'wechat#oauth2_page' }
-      allow(controller.wechat(:wx2).jsapi_ticket).to receive(:oauth2_state) {'oauth2_state'}
+      allow(controller.wechat(:wx2).jsapi_ticket).to receive(:oauth2_state) { 'oauth2_state' }
     end
 
     it 'will redirect_to tencent page at first visit' do
